@@ -1,0 +1,117 @@
+# ============================================================================
+# DESIGN-ONLY / UNVERIFIED AGAINST A REAL DEPLOY.
+# This template provisions the vector infrastructure for a Bedrock Knowledge
+# Base (the "replace the embedded FAQ with a KB" stand-out suggestion). It is
+# cfn-lint clean, but it has NOT been deployed. Two things in particular need a
+# real run to confirm: (1) OpenSearch Serverless data-access-policy JSON is
+# accepted as written, and (2) the KB itself is created AFTER the vector index
+# exists - which is why the KB + data source are created by kb_setup.py (a
+# script), NOT in this template. CloudFormation cannot create the vector index,
+# and AWS::Bedrock::KnowledgeBase requires the index to already exist, so a
+# single-stack deploy would fail. See PROJECT_NOTES.md section on RAG.
+# ============================================================================
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >-
+  Vector infrastructure for a Bedrock Knowledge Base backing the shop FAQ:
+  S3 source bucket, an OpenSearch Serverless vector collection with its three
+  policies, and the IAM role the Knowledge Base assumes. The Knowledge Base,
+  the vector index, and the data source are created afterward by kb_setup.py.
+
+Parameters:
+  CollectionName:
+    Type: String
+    Default: shop-faq-vectors
+    Description: OpenSearch Serverless collection name (<=32 chars, lowercase).
+
+Resources:
+
+  FaqSourceBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub shop-faq-kb-source-${AWS::AccountId}
+
+  # --- OpenSearch Serverless: encryption, network, and data-access policies ---
+  EncryptionPolicy:
+    Type: AWS::OpenSearchServerless::SecurityPolicy
+    Properties:
+      Name: !Sub ${CollectionName}-enc
+      Type: encryption
+      Policy: !Sub '{"Rules":[{"ResourceType":"collection","Resource":["collection/${CollectionName}"]}],"AWSOwnedKey":true}'
+
+  NetworkPolicy:
+    Type: AWS::OpenSearchServerless::SecurityPolicy
+    Properties:
+      Name: !Sub ${CollectionName}-net
+      Type: network
+      Policy: !Sub '[{"Rules":[{"ResourceType":"collection","Resource":["collection/${CollectionName}"]},{"ResourceType":"dashboard","Resource":["collection/${CollectionName}"]}],"AllowFromPublic":true}]'
+
+  KnowledgeBaseRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${CollectionName}-kb-role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: bedrock.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: KnowledgeBaseAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: InvokeEmbeddingModel
+                Effect: Allow
+                Action: bedrock:InvokeModel
+                Resource: !Sub arn:aws:bedrock:${AWS::Region}::foundation-model/amazon.titan-embed-text-v2:0
+              - Sid: OpenSearchAccess
+                Effect: Allow
+                Action: aoss:APIAccessAll
+                Resource: !Sub arn:aws:aoss:${AWS::Region}:${AWS::AccountId}:collection/*
+              - Sid: ReadSourceBucket
+                Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:ListBucket
+                Resource:
+                  - !GetAtt FaqSourceBucket.Arn
+                  - !Sub ${FaqSourceBucket.Arn}/*
+
+  # Data-access policy: grants the KB role AND the deploying principal the
+  # collection/index API permissions. kb_setup.py (run by that principal)
+  # creates the index; the KB role reads/writes vectors at query/ingest time.
+  DataAccessPolicy:
+    Type: AWS::OpenSearchServerless::AccessPolicy
+    Properties:
+      Name: !Sub ${CollectionName}-access
+      Type: data
+      Policy: !Sub
+        - '[{"Rules":[{"ResourceType":"collection","Resource":["collection/${CollectionName}"],"Permission":["aoss:CreateCollectionItems","aoss:DescribeCollectionItems","aoss:UpdateCollectionItems"]},{"ResourceType":"index","Resource":["index/${CollectionName}/*"],"Permission":["aoss:CreateIndex","aoss:DescribeIndex","aoss:ReadDocument","aoss:WriteDocument","aoss:UpdateIndex","aoss:DeleteIndex"]}],"Principal":["${KbRoleArn}","${DeployerArn}"]}]'
+        - KbRoleArn: !GetAtt KnowledgeBaseRole.Arn
+          DeployerArn: !Sub arn:aws:iam::${AWS::AccountId}:root
+
+  VectorCollection:
+    Type: AWS::OpenSearchServerless::Collection
+    DependsOn:
+      - EncryptionPolicy
+      - NetworkPolicy
+      - DataAccessPolicy
+    Properties:
+      Name: !Ref CollectionName
+      Type: VECTORSEARCH
+      Description: Vector store for the shop FAQ knowledge base.
+
+Outputs:
+  FaqSourceBucketName:
+    Description: S3 bucket to upload online_shop_faq.md into (KB data source).
+    Value: !Ref FaqSourceBucket
+  CollectionArn:
+    Description: OpenSearch Serverless collection ARN (pass to kb_setup.py).
+    Value: !GetAtt VectorCollection.Arn
+  CollectionEndpoint:
+    Description: Collection endpoint for index creation.
+    Value: !GetAtt VectorCollection.CollectionEndpoint
+  KnowledgeBaseRoleArn:
+    Description: IAM role ARN the Knowledge Base assumes (pass to kb_setup.py).
+    Value: !GetAtt KnowledgeBaseRole.Arn

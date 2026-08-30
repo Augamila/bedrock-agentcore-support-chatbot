@@ -342,6 +342,44 @@ system**; (2) **disclose** the memory-line edit to `create_harness.py` — it's 
 
 ---
 
+## 12b. (Optional, stand-out) Structured-output classifier check
+
+Verifies the routing classifier only ever emits a valid category. The logic is proven with no AWS:
+```bash
+python classify_and_validate.py --self-test
+```
+Against the live model (produces a confusion matrix + routing accuracy over `harness-tests.json`,
+using each case's `expected_category`):
+```bash
+python classify_and_validate.py --tests-json harness-tests.json
+```
+Include the self-test output and the confusion matrix as supplementary evidence for the
+"classifier produces consistent, unambiguous output" criterion.
+
+## 12c. (Optional, stand-out) RAG / Bedrock Knowledge Base — DESIGN-ONLY
+
+This path replaces the embedded FAQ with a Knowledge Base. It is provided as a lint-clean design
+but has **not** been deployed — read the RAG note in `PROJECT_NOTES.md` before using it, and expect
+to fix small details (index mapping, data-access-policy JSON, KB field names) on the first real run.
+Outline:
+```bash
+# 1. Vector infrastructure (bucket + OpenSearch Serverless collection + policies + KB role)
+aws cloudformation deploy --template-file cloudformation-knowledge-base.yaml \
+  --stack-name shop-faq-kb-stack --capabilities CAPABILITY_NAMED_IAM --region us-east-1
+aws cloudformation describe-stacks --stack-name shop-faq-kb-stack \
+  --query 'Stacks[0].Outputs' --output table --region us-east-1
+
+# 2. Create the index + KB + data source + start ingestion (CFN can't create the index)
+pip install opensearch-py requests-aws4auth
+python kb_setup.py --collection-arn <CollectionArn> --collection-endpoint <CollectionEndpoint> \
+  --bucket <FaqSourceBucketName> --kb-role-arn <KnowledgeBaseRoleArn>
+
+# 3. Deploy search_faq.py as a second gateway tool, then create the harness with the RAG prompt:
+python create_harness.py --prompt-file system_prompt_rag.txt
+```
+For a 40-line FAQ, the embedded-`{{FAQ}}` prompt is the better choice and remains the primary
+submission; RAG matters only when the reference document is too large to embed.
+
 ## 13. Cleanup (avoid ongoing charges)
 
 Empty the eval bucket **before** deleting the testing stack, or that stack ends in `DELETE_FAILED`.
@@ -352,6 +390,10 @@ aws cloudformation delete-stack --stack-name bug-report-testing-stack --region u
 aws cloudformation delete-stack --stack-name bug-report-tool-stack --region us-east-1
 # if you deployed the optional guardrail:
 aws cloudformation delete-stack --stack-name bug-report-guardrail-stack --region us-east-1
+# if you deployed the optional RAG stack (delete the KB via console/API first, then the stack;
+# empty the FAQ source bucket before deleting):
+aws s3 rm s3://<FaqSourceBucketName> --recursive --region us-east-1
+aws cloudformation delete-stack --stack-name shop-faq-kb-stack --region us-east-1
 deactivate ; rm -rf venv
 ```
 

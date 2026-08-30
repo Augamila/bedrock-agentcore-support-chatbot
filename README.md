@@ -53,6 +53,8 @@ You will create the harness, iterate on its system prompt, and then test it in v
 | `docs/architecture.md` | Architecture diagram, classifier-prompt reference, and routing-conditions table (submission artifacts). |
 | `OBSERVATIONS.md` | Evaluation observations template (fill in with your real run numbers). |
 | `IMPLEMENTATION_GUIDE.md` | **Start here.** From-zero, click-by-click build + AWS + evaluation + submission guide. |
+| `classify_and_validate.py` | **Stand-out (verified).** Structured-output classifier check: strict JSON enum, confusion matrix, `--self-test` runs with no AWS. |
+| `cloudformation-knowledge-base.yaml`, `kb_setup.py`, `search_faq.py`, `system_prompt_rag.txt` | **Stand-out (design-only).** RAG path: OpenSearch Serverless + Bedrock Knowledge Base to replace the embedded FAQ. Not deployed - see PROJECT_NOTES.md. |
 
 ## Project Instructions
 

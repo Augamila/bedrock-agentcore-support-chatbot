@@ -117,6 +117,52 @@ screenshots - that the submission requires and that only you can generate.
 
 ---
 
+## 5b. The remaining two stand-out suggestions
+
+### Structured output for the classifier (VERIFIED locally)
+The rubric suggests using structured output so the classifier only produces valid values.
+AgentCore has no separate classifier node, so this is delivered as a standalone validation
+harness rather than by corrupting the customer-facing prompt:
+
+- `system_prompt_classifier.txt` - a strict prompt that must return only `{"category": "..."}`
+  with the value constrained to `BUG_REPORT` / `PLATFORM_QUESTION` / `OTHER` / `CLARIFY`.
+- `classify_and_validate.py` - sends each test prompt to Nova (Converse), parses the output, and
+  ENFORCES the enum: any value outside the four is treated as an invalid structured output,
+  retried once, then counted as a hard failure (never silently coerced to a default). It prints a
+  confusion matrix vs. each test's `expected_category`, routing accuracy, and an invalid-output
+  count.
+- `harness-tests.json` gained an additive `expected_category` on every case (safe - the eval
+  script reads only id/prompt/expected).
+
+This one is genuinely verified without AWS: `python classify_and_validate.py --self-test` runs the
+parse/validate/normalize logic against eleven canned strings (valid JSON, code-fenced, stray
+lead-in, wrong case, out-of-enum value, wrong key, extra key, non-JSON, empty, missing) and asserts
+the parser only ever yields a valid enum value or `None`. That self-test passes. The live model run
+(routing accuracy) still needs AWS.
+
+### Bedrock Knowledge Base / RAG (DESIGN-ONLY, UNVERIFIED)
+The rubric suggests replacing the embedded FAQ with a Knowledge Base backed by a vector index.
+Delivered as a coherent, cfn-lint-clean design, but NOT deployed:
+
+- `cloudformation-knowledge-base.yaml` - S3 source bucket, OpenSearch Serverless vector collection
+  with its encryption/network/data-access policies, and the KB IAM role. cfn-lint clean.
+- `kb_setup.py` - does the ordered steps CloudFormation can't: create the vector index
+  (opensearch-py + SigV4), upload the FAQ, create the Knowledge Base + S3 data source, start
+  ingestion, and record the KB id. (CFN cannot create the index, and `AWS::Bedrock::KnowledgeBase`
+  requires the index to exist first - which is exactly why the KB is created by script, not CFN.)
+- `search_faq.py` - a second gateway-tool Lambda that calls `bedrock-agent-runtime:Retrieve` and
+  returns the top passages.
+- `system_prompt_rag.txt` - a variant prompt where platform questions call `search_faq` and answer
+  only from retrieved passages instead of an embedded FAQ.
+
+Honesty: this is the least-verified part of the whole project. It follows AWS's documented pattern,
+but the OpenSearch data-access-policy JSON, the index mapping/dimension, the AOSS propagation delay
+before index creation, the KB storage-configuration field names, and the second-tool gateway event
+shape are all things that typically need one real deploy to get exactly right. For a 40-line FAQ
+that fits comfortably in-context, embedding remains the better engineering choice - the RAG path is
+included to demonstrate the pattern and how it would wire in, and the embedded-`{{FAQ}}` prompt
+remains the primary, working submission. Only adopt RAG if you actually deploy and validate it.
+
 ## 6. Lessons learned
 
 - **A generic FAQ plus explicit anchors beats a clever prompt.** The misroutes cluster at
