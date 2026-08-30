@@ -52,6 +52,7 @@ You will create the harness, iterate on its system prompt, and then test it in v
 | `PROJECT_NOTES.md` | What was changed from the starter, why, and lessons learned. |
 | `docs/architecture.md` | Architecture diagram, classifier-prompt reference, and routing-conditions table (submission artifacts). |
 | `OBSERVATIONS.md` | Evaluation observations template (fill in with your real run numbers). |
+| `IMPLEMENTATION_GUIDE.md` | **Start here.** From-zero, click-by-click build + AWS + evaluation + submission guide. |
 
 ## Project Instructions
 
