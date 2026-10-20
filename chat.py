@@ -35,24 +35,6 @@ def event_stream(response):
     raise RuntimeError(f"No event stream in response: {list(response)}")
 
 
-def build_model_config(config):
-    """Same guardrail-aware model config shape used by create_harness.py.
-    Reads guardrail_id/guardrail_version from agentcore_config.json if present
-    (written there by create_harness.py --guardrail-id/--guardrail-version)."""
-    cfg = {
-        "modelId": config.get("model_id", "us.amazon.nova-pro-v1:0"),
-    }
-    guardrail_id = config.get("guardrail_id")
-    guardrail_version = config.get("guardrail_version")
-    if guardrail_id and guardrail_version:
-        cfg["guardrailConfig"] = {
-            "guardrailIdentifier": guardrail_id,
-            "guardrailVersion": str(guardrail_version),
-            "trace": "enabled",
-        }
-    return {"bedrockModelConfig": cfg}
-
-
 def invoke(rt, config, session_id, user_text, verbose=False):
     """Send one user message; print the reply as it streams in.
 
@@ -62,10 +44,9 @@ def invoke(rt, config, session_id, user_text, verbose=False):
     response = rt.invoke_harness(
         harnessArn=config["harness_arn"],
         runtimeSessionId=session_id,
-        # Pin the model (and, if configured, the guardrail) on every invoke as
-        # well — belt and suspenders, since create_harness.py already pinned
-        # both on the harness itself.
-        model=build_model_config(config),
+        # Pin the model on every invoke as well (belt and suspenders —
+        # create_harness.py already pinned it on the harness).
+        model={"bedrockModelConfig": {"modelId": config.get("model_id", "us.amazon.nova-pro-v1:0")}},
         # Attach the gateway so the model can use create_bug_report.
         tools=[{
             "type": "agentcore_gateway",

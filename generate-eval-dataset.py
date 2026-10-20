@@ -39,16 +39,13 @@ def invoke_harness_once(
     gateway_arn: str,
     model_id: str,
     prompt: str,
-    guardrail_id: str = None,
-    guardrail_version: str = None,
 ) -> Dict[str, Any]:
     """Invoke the harness with a single user message in a fresh session and
     return {"final_output_text": ...}.
 
     The harness runs the full agent loop server-side (including any tool
     calls through the gateway); we collect the streamed text of its final
-    reply. If a guardrail is configured, it's attached the same way
-    create_harness.py attaches it on the harness itself.
+    reply.
     """
     tools = []
     if gateway_arn:
@@ -58,21 +55,13 @@ def invoke_harness_once(
             "config": {"agentCoreGateway": {"gatewayArn": gateway_arn}},
         }]
 
-    model_cfg = {"modelId": model_id}
-    if guardrail_id and guardrail_version:
-        model_cfg["guardrailConfig"] = {
-            "guardrailIdentifier": guardrail_id,
-            "guardrailVersion": str(guardrail_version),
-            "trace": "enabled",
-        }
-
     response = rt.invoke_harness(
         harnessArn=harness_arn,
         # Session ids must be >= 33 characters; a fresh one per test case
         # keeps every test independent.
         runtimeSessionId=f"{uuid.uuid4()}-evalcase",
         # Pin the model explicitly — never rely on the harness default.
-        model={"bedrockModelConfig": model_cfg},
+        model={"bedrockModelConfig": {"modelId": model_id}},
         tools=tools,
         messages=[{"role": "user", "content": [{"text": prompt}]}],
     )
@@ -154,8 +143,6 @@ def main():
                     gateway_arn=gateway_arn,
                     model_id=args.model_id,
                     prompt=prompt,
-                    guardrail_id=config.get("guardrail_id"),
-                    guardrail_version=config.get("guardrail_version"),
                 )
                 response_text = result["final_output_text"]
                 n_ok += 1
