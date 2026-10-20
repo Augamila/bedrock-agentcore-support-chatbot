@@ -27,6 +27,28 @@ AWS services: Bedrock AgentCore (harness, Gateway), Amazon Bedrock (Nova Pro via
 4. **`<thinking>` text can leak** into replies from Nova Pro; the prompt discourages it but it should be stripped in code in production.
 5. **Single-turn evaluation** cannot test multi-turn slot-filling, which is the core bug-report behavior.
 
+## Evidence
+
+Account identifiers and local paths are redacted with solid boxes.
+
+**A tool call, matched to its database record.** The chat shows the `[tool call] bugreports___create_bug_report` line and the ticket ID the tool returned; the DynamoDB item has the same ticket ID with the three collected fields and status `OPEN`.
+
+![Chat session with the tool call and ticket ID, followed by a DynamoDB get-item for the same ID](evidence/ticket-chat-full-session.png)
+![Tail of the same session and the full get-item result](evidence/ticket-chat-and-get-item.png)
+![The same item in the DynamoDB console](evidence/ticket-dynamodb-record.png)
+
+**Routing, FAQ grounding and hand-off.** This transcript is from an earlier prompt revision, before the fixes described in `OBSERVATIONS.md`. It still contains two defects that were later addressed: a leaked `<thinking>` block, and a ticket "48392" reported with no `[tool call]` line, which is the fabrication failure described above. The FAQ answers, the fixed hand-off message and the prompt-injection refusal are visible.
+
+![Multi-turn transcript covering bug reports, FAQ answers, hand-offs and an injection attempt](evidence/faq-handoff-injection-transcript.png)
+
+**Evaluation runs (Bedrock Evaluations, `Builtin.Correctness`, 17 prompts).** Run 1 averaged 0.79 (2 prompts scored 0, 3 scored 0.5, 12 scored about 0.9). After prompt revisions, run 2 averaged 0.912 (1 prompt at 0, 1 at 0.5, 15 at about 0.9). The per-prompt view for run 1 shows the failure modes the revisions targeted: leaked `<thinking>` text, internal category labels shown to the customer, and unnecessary clarifying questions when the message already contained all three bug-report fields. The scores come from an LLM judge on response text only; they do not verify that tools were actually called.
+
+![Run 1 metrics summary, correctness 0.79](evidence/eval-run1-metrics-0.79.png)
+![Run 1 score distribution](evidence/eval-run1-score-distribution.png)
+![Run 1 per-prompt generation output against ground truth](evidence/eval-run1-per-prompt.png)
+![Run 2 score distribution, average 0.912](evidence/eval-run2-score-distribution-0.912.png)
+![Evaluation jobs list](evidence/eval-jobs-list.png)
+
 ## Status of optional components
 
 | Component | Status |
